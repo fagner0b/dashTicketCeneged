@@ -51,8 +51,27 @@ def load_data(uploaded_file=None):
     """Carrega e processa os dados do CSV"""
     try:
         if uploaded_file is not None:
-            # Carrega arquivo enviado pelo usuário
-            df = pd.read_csv(uploaded_file, sep=';', encoding='utf-8')
+            # Tenta diferentes separadores e encodings para arquivo carregado
+            separators = [';', ',', '\t']
+            encodings = ['utf-8', 'latin1', 'cp1252', 'iso-8859-1']
+            
+            df = None
+            for sep in separators:
+                for enc in encodings:
+                    try:
+                        uploaded_file.seek(0)  # Reset file pointer
+                        df = pd.read_csv(uploaded_file, sep=sep, encoding=enc)
+                        # Verifica se o CSV foi lido corretamente
+                        if len(df.columns) > 1 and len(df) > 0:
+                            st.info(f"✅ Arquivo carregado com sucesso! Separador: '{sep}', Encoding: {enc}")
+                            break
+                    except Exception:
+                        continue
+                if df is not None and len(df.columns) > 1:
+                    break
+            
+            if df is None or len(df.columns) <= 1:
+                raise ValueError("Não foi possível detectar o formato correto do arquivo CSV")
         else:
             # Carrega arquivo padrão
             df = pd.read_csv('glpi.csv', sep=';', encoding='utf-8')
@@ -77,7 +96,21 @@ def load_data(uploaded_file=None):
         
         return df
     except Exception as e:
-        st.error(f"Erro ao carregar dados: {str(e)}")
+        error_msg = str(e)
+        if "No columns to parse from file" in error_msg:
+            st.error("❌ **Erro no formato do arquivo CSV:**")
+            st.error("• Verifique se o arquivo contém dados válidos")
+            st.error("• Certifique-se que o arquivo tem cabeçalhos nas colunas")
+            st.error("• Experimente salvar o arquivo com encoding UTF-8")
+            st.error("• Formatos aceitos: separados por ';', ',' ou tab")
+        else:
+            st.error(f"❌ **Erro ao carregar dados:** {error_msg}")
+        
+        # Exibe informações adicionais sobre o arquivo
+        if uploaded_file is not None:
+            st.info(f"📄 **Arquivo enviado:** {uploaded_file.name}")
+            st.info(f"📊 **Tamanho:** {uploaded_file.size} bytes")
+        
         return None
 
 
@@ -114,7 +147,7 @@ def create_monthly_timeline_chart(df, estado_filter=None):
     
     return fig
 
-def create_department_chart(df, estado_filter=None):
+def create_department_chart(df, estado_filter=None, month_filter=None):
     """Cria gráfico de tickets por departamento"""
     df_filtered = df.copy()
     
@@ -122,6 +155,12 @@ def create_department_chart(df, estado_filter=None):
     if estado_filter and len(estado_filter) > 0:
         df_sla = preprocess_sla_data(df_filtered)
         df_filtered = df_sla[df_sla['Estado'].isin(estado_filter)]
+    
+    # Aplica filtro de mês se especificado
+    if month_filter and len(month_filter) > 0:
+        if 'Ano_Mes' not in df_filtered.columns:
+            df_filtered = preprocess_sla_data(df_filtered)
+        df_filtered = df_filtered[df_filtered['Ano_Mes'].astype(str).isin(month_filter)]
     
     dept_counts = df_filtered['Plug-ins - Departamento - Departamento'].value_counts().head(10)
     
@@ -137,7 +176,7 @@ def create_department_chart(df, estado_filter=None):
     
     return fig
 
-def create_location_chart(df, estado_filter=None):
+def create_location_chart(df, estado_filter=None, month_filter=None):
     """Cria gráfico de tickets por localização"""
     df_filtered = df.copy()
     
@@ -145,6 +184,12 @@ def create_location_chart(df, estado_filter=None):
     if estado_filter and len(estado_filter) > 0:
         df_sla = preprocess_sla_data(df_filtered)
         df_filtered = df_sla[df_sla['Estado'].isin(estado_filter)]
+    
+    # Aplica filtro de mês se especificado
+    if month_filter and len(month_filter) > 0:
+        if 'Ano_Mes' not in df_filtered.columns:
+            df_filtered = preprocess_sla_data(df_filtered)
+        df_filtered = df_filtered[df_filtered['Ano_Mes'].astype(str).isin(month_filter)]
     
     location_counts = df_filtered['Localização'].value_counts().head(15)
     
@@ -192,13 +237,17 @@ def preprocess_sla_data(df):
     
     return df_sla
 
-def create_sla_compliance_chart(df, estado_filter=None):
+def create_sla_compliance_chart(df, estado_filter=None, month_filter=None):
     """Cria gráfico de compliance SLA por mês e categoria"""
     df_sla = preprocess_sla_data(df)
     
     # Aplica filtro de estado se especificado
     if estado_filter and len(estado_filter) > 0:
         df_sla = df_sla[df_sla['Estado'].isin(estado_filter)]
+    
+    # Aplica filtro de mês se especificado
+    if month_filter and len(month_filter) > 0:
+        df_sla = df_sla[df_sla['Ano_Mes'].astype(str).isin(month_filter)]
     
     # Filtra apenas as categorias principais
     df_filtered = df_sla[df_sla['Categoria_SLA'].isin(['TI Infra', 'TI Sistema GPM', 'TI Sistema Telefonia'])]
@@ -276,7 +325,7 @@ def create_sla_summary_chart(df, estado_filter=None):
     
     return fig
 
-def create_technician_chart(df, estado_filter=None):
+def create_technician_chart(df, estado_filter=None, month_filter=None):
     """Cria gráfico de tickets por técnico (time principal)"""
     tech_column = 'Atribuído - Técnico'
     
@@ -289,6 +338,12 @@ def create_technician_chart(df, estado_filter=None):
     if estado_filter and len(estado_filter) > 0:
         df_sla = preprocess_sla_data(df_filtered)
         df_filtered = df_sla[df_sla['Estado'].isin(estado_filter)]
+    
+    # Aplica filtro de mês se especificado
+    if month_filter and len(month_filter) > 0:
+        if 'Ano_Mes' not in df_filtered.columns:
+            df_filtered = preprocess_sla_data(df_filtered)
+        df_filtered = df_filtered[df_filtered['Ano_Mes'].astype(str).isin(month_filter)]
     
     # Expande técnicos múltiplos para contar individualmente
     tech_data = []
@@ -357,7 +412,7 @@ def main():
         
         if st.button("🔄 Atualizar Dashboard"):
             st.cache_data.clear()
-            st.experimental_rerun()
+            st.rerun()
         
         st.markdown("---")
         st.header("🏢 Filtros por Entidade")
@@ -370,6 +425,32 @@ def main():
             default=estado_options,
             help="PE: Ticket > TI > Cng PE | RN: Ticket > TI > Cng PE > Cng RN"
         )
+        
+        st.markdown("---")
+        st.header("📅 Filtros por Período")
+        
+        # Carrega dados temporariamente para obter as opções de mês
+        df_temp = load_data(uploaded_file)
+        if df_temp is not None:
+            df_temp_processed = preprocess_sla_data(df_temp)
+            # Aplica filtro de estado para obter meses relevantes
+            if estado_filter and len(estado_filter) > 0:
+                df_temp_processed = df_temp_processed[df_temp_processed['Estado'].isin(estado_filter)]
+            
+            # Obtém lista única de meses disponíveis
+            months_available = sorted(df_temp_processed['Ano_Mes'].dropna().unique().astype(str))
+            
+            if months_available:
+                month_filter = st.multiselect(
+                    "Filtrar por Mês/Ano",
+                    options=months_available,
+                    default=months_available,
+                    help="Filtro aplicado apenas às seções: Resumo Geral SLA, Métricas Gerais, Análise de SLA, Top 10 Departamentos, Tickets por Localização e Distribuição por Técnico"
+                )
+            else:
+                month_filter = []
+        else:
+            month_filter = []
     
     # Carrega os dados
     df = load_data(uploaded_file)
@@ -387,6 +468,10 @@ def main():
     # Aplica filtro de estado
     if estado_filter and len(estado_filter) > 0:
         df_sla = df_sla[df_sla['Estado'].isin(estado_filter)]
+    
+    # Aplica filtro de mês para as métricas gerais
+    if month_filter and len(month_filter) > 0:
+        df_sla = df_sla[df_sla['Ano_Mes'].astype(str).isin(month_filter)]
     
     # Os dados já estão filtrados pelo time na função load_data
     df_filtered = df_sla
@@ -423,7 +508,7 @@ def main():
     # Resumo Geral SLA
     st.header("📋 Resumo Geral SLA ")
     
-    # Métricas gerais de SLA
+    # Métricas gerais de SLA (usando mesmo filtro das métricas gerais)
     df_sla_geral = df_filtered
     
     total_sla = len(df_sla_geral)
@@ -468,6 +553,10 @@ def main():
     # Aplica filtro de estado para métricas
     if estado_filter and len(estado_filter) > 0:
         df_sla = df_sla[df_sla['Estado'].isin(estado_filter)]
+    
+    # Aplica filtro de mês para análise de SLA
+    if month_filter and len(month_filter) > 0:
+        df_sla = df_sla[df_sla['Ano_Mes'].astype(str).isin(month_filter)]
     
     col1, col2, col3 = st.columns(3)
     
@@ -514,7 +603,7 @@ def main():
     
     # Compliance SLA por Mês
     st.header("📉 Compliance SLA")
-    st.plotly_chart(create_sla_compliance_chart(df, estado_filter), width='stretch')
+    st.plotly_chart(create_sla_compliance_chart(df, estado_filter, month_filter), width='stretch')
     
     st.markdown("---")
     
@@ -522,15 +611,15 @@ def main():
     col1, col2 = st.columns(2)
     
     with col1:
-        st.plotly_chart(create_department_chart(df, estado_filter), width='stretch')
+        st.plotly_chart(create_department_chart(df, estado_filter, month_filter), width='stretch')
     
     with col2:
-        st.plotly_chart(create_location_chart(df, estado_filter), width='stretch')
+        st.plotly_chart(create_location_chart(df, estado_filter, month_filter), width='stretch')
     
     st.markdown("---")
     
     # Gráfico de técnicos
-    tech_chart = create_technician_chart(df, estado_filter)
+    tech_chart = create_technician_chart(df, estado_filter, month_filter)
     if tech_chart:
         st.plotly_chart(tech_chart, width='stretch')
     
